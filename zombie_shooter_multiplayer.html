@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OUTBREAK // Night Shift Multiplayer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Staatliches&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  :root{
+    --void:#060907; --toxic:#6bff8a; --toxic-dim:#2c6b41; --blood:#a3121f; --blood-bright:#ff2d3a;
+    --bone:#e8e2d0; --bone-dim:#8a8778;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; background:var(--void); overflow:hidden; font-family:'JetBrains Mono', monospace; }
+  #game-container{ position:relative; width:100vw; height:100vh; background:var(--void); display:none; }
+  #game-container.active{ display:block; cursor:none; }
+  canvas{ display:block; width:100%; height:100%; }
+  #mini-canvas{ position:absolute; bottom:18px; right:18px; opacity:0.85; border:1px solid rgba(107,255,138,0.25); }
+
+  #hud{ position:absolute; inset:0; pointer-events:none; color:var(--bone); }
+  .corner{ position:absolute; padding:14px 18px; }
+  #hud-topleft{ top:0; left:0; } #hud-topright{ top:0; right:0; text-align:right; }
+  #hud-bottom{ bottom:0; left:50%; transform:translateX(-50%); text-align:center; padding-bottom:22px; }
+  .label{ font-size:10px; letter-spacing:2px; color:var(--bone-dim); margin-bottom:4px; }
+  #health-track{ width:220px; height:14px; background:rgba(0,0,0,0.45); border:1px solid rgba(232,226,208,0.25); clip-path: polygon(0 0, 96% 0, 100% 100%, 4% 100%); }
+  #health-fill{ height:100%; background:linear-gradient(90deg, var(--blood), var(--blood-bright)); width:100%; transition:width 0.15s ease-out; }
+  #health-fill.healing{ background:linear-gradient(90deg, var(--toxic-dim), var(--toxic)); }
+  #health-num{ font-size:12px; margin-top:5px; color:var(--bone-dim); }
+  #role-name{ font-size:22px; color:var(--toxic); text-shadow:0 0 12px rgba(107,255,138,0.5); }
+  #round-info{ font-size:12px; color:var(--bone-dim); margin-top:2px; }
+  #gun-name{ font-size:12px; letter-spacing:3px; color:var(--toxic); margin-bottom:6px; }
+  #ammo-wrap{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
+  #ammo-num{ font-size:34px; color:var(--bone); font-weight:700; }
+  #ammo-max{ font-size:14px; color:var(--bone-dim); }
+  #ability-hint{ font-size:10px; letter-spacing:2px; color:var(--toxic); margin-top:4px; height:12px; }
+  #shooter-track-wrap{ position:absolute; top:14px; left:50%; transform:translateX(-50%); text-align:center; }
+  #shooter-track-wrap .label{ color:var(--blood-bright); }
+  #shooter-hp-track{ width:180px; height:8px; background:rgba(0,0,0,0.45); border:1px solid rgba(232,226,208,0.25); }
+  #shooter-hp-fill{ height:100%; background:linear-gradient(90deg, var(--blood), var(--blood-bright)); width:100%; }
+
+  #vignette{ position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 78%, rgba(0,0,0,0.92) 100%); }
+
+  .screen{ position:absolute; inset:0; background:rgba(6,9,7,0.94); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; z-index:20; overflow-y:auto; padding:20px; }
+  .screen h1{ font-family:'Staatliches', sans-serif; font-size:64px; letter-spacing:8px; color:var(--bone); text-shadow:0 0 40px rgba(163,18,31,0.6); }
+  .screen h1 span{ color:var(--blood-bright); }
+  .screen p.tag{ color:var(--bone-dim); font-size:12px; letter-spacing:2px; margin-top:8px; }
+  #gameOverScreen{ display:none; } #lobbyScreen{ display:flex; }
+
+  .panel{ margin-top:26px; width:min(420px,90vw); background:rgba(232,226,208,0.05); border:1px solid rgba(232,226,208,0.15); padding:18px; text-align:left; }
+  .panel label{ font-size:10px; letter-spacing:2px; color:var(--bone-dim); display:block; margin-bottom:6px; }
+  .panel input{ width:100%; background:rgba(0,0,0,0.4); border:1px solid rgba(232,226,208,0.25); color:var(--bone); font-family:inherit; font-size:13px; padding:9px 10px; margin-bottom:14px; }
+  .panel button{ width:100%; background:rgba(107,255,138,0.12); border:1px solid var(--toxic); color:var(--toxic); font-family:inherit; font-size:12px; letter-spacing:2px; padding:11px; cursor:pointer; }
+  .panel button:hover{ background:rgba(107,255,138,0.22); }
+  .panel button:disabled{ opacity:0.35; cursor:default; }
+  #playerList{ list-style:none; font-size:12px; color:var(--bone); margin-bottom:14px; }
+  #playerList li{ padding:6px 0; border-bottom:1px solid rgba(232,226,208,0.08); display:flex; justify-content:space-between; }
+  #playerList .tag{ color:var(--toxic); font-size:10px; letter-spacing:1px; }
+  #statusMsg{ font-size:11px; color:var(--bone-dim); margin-top:10px; min-height:14px; }
+  #statusMsg.err{ color:var(--blood-bright); }
+
+  .roundover-stats{ margin-top:20px; font-size:14px; color:var(--bone); }
+  .roundover-stats b{ color:var(--toxic); }
+
+  #wave-banner{
+    position:absolute; top:38%; left:50%; transform:translate(-50%,-50%) scale(0.9);
+    font-family:'Staatliches', sans-serif; font-size:56px; letter-spacing:6px; color:var(--bone);
+    text-shadow:0 0 30px rgba(107,255,138,0.35), 0 4px 0 rgba(0,0,0,0.6);
+    opacity:0; pointer-events:none; text-align:center; transition:opacity 0.4s ease, transform 0.4s ease;
+  }
+  #wave-banner .sub{ display:block; font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:4px; color:var(--toxic); margin-top:6px; }
+  #wave-banner.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+</style>
+</head>
+<body>
+
+<div class="screen" id="lobbyScreen">
+  <h1>OUTBREAK<span>.</span></h1>
+  <p class="tag">ONE SURVIVOR. EVERYONE ELSE IS A ZOMBIE.</p>
+
+  <div class="panel">
+    <label>YOUR NAME</label>
+    <input id="nameInput" maxlength="16" placeholder="Enter a name" />
+    <p class="tag" style="margin-bottom:14px;">Everyone who opens this same link joins the same game.</p>
+    <button id="joinBtn" type="button">JOIN ROOM</button>
+  </div>
+
+  <div class="panel" id="rosterPanel" style="display:none;">
+    <label>PLAYERS IN ROOM</label>
+    <ul id="playerList"></ul>
+    <button id="startBtn" type="button">START ROUND</button>
+    <div id="statusMsg"></div>
+  </div>
+</div>
+
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+  <canvas id="mini-canvas" width="140" height="98"></canvas>
+  <div id="vignette"></div>
+
+  <div id="shooter-track-wrap">
+    <div class="label">SHOOTER STATUS</div>
+    <div id="shooter-hp-track"><div id="shooter-hp-fill"></div></div>
+  </div>
+
+  <div id="hud">
+    <div class="corner" id="hud-topleft">
+      <div class="label" id="hp-label">STATUS</div>
+      <div id="health-track"><div id="health-fill"></div></div>
+      <div id="health-num">100 / 100</div>
+    </div>
+    <div class="corner" id="hud-topright">
+      <div id="role-name">SHOOTER</div>
+      <div id="round-info">ROUND 1</div>
+    </div>
+    <div class="corner" id="hud-bottom">
+      <div id="gun-name">PISTOL</div>
+      <div id="ammo-wrap"><div id="ammo-num">15</div><div id="ammo-max">/ 15</div></div>
+      <div id="ability-hint"></div>
+    </div>
+  </div>
+  <div id="wave-banner">WAVE 1<span class="sub">THEY'RE COMING</span></div>
+</div>
+
+<div class="screen" id="gameOverScreen">
+  <h1 id="resultTitle">ROUND <span>OVER</span></h1>
+  <div class="roundover-stats" id="resultDetail"></div>
+  <div class="panel">
+    <label>PLAYERS</label>
+    <ul id="playerList2"></ul>
+    <button id="nextRoundBtn" type="button">NEXT ROUND</button>
+  </div>
+</div>
+
+<script>(() => {
+  // =========================================================
+  // NETWORKING: plain WebSocket to a small server you run yourself.
+  // No third-party broker, no NAT-traversal concerns, no signup.
+  // The server (server.js) serves this page AND relays game messages,
+  // so the link everyone shares is just wherever you host that server.
+  // =========================================================
+
+  let ws = null;
+  let myId = null;
+  let myName = 'Player';
+  let joined = false;
+
+  let rosterInfo = {};
+  let currentShooterId = null;
+  let currentRoles = {};
+  let currentRound = 0;
+
+  function setStatus(msg, isErr){
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg||''; el.classList.toggle('err', !!isErr);
+  }
+  function wsSend(obj){ if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
+
+  function connectWS(){
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    setStatus('Connecting to server...');
+    try{
+      ws = new WebSocket(proto + location.host);
+    } catch(e){
+      setStatus('Could not open a connection — is the server running?', true);
+      return;
+    }
+    ws.onopen = () => {
+      wsSend({ type:'hello', name: myName });
+    };
+    ws.onmessage = (ev) => {
+      let data;
+      try{ data = JSON.parse(ev.data); } catch(e){ return; }
+      if(data.type === 'welcome'){
+        myId = data.id;
+        joined = true;
+        document.getElementById('rosterPanel').style.display = 'block';
+        setStatus('Connected! Waiting for players...');
+      } else {
+        handleIncoming(data);
+      }
+    };
+    ws.onclose = () => setStatus('Disconnected from server. Reload to reconnect.', true);
+    ws.onerror = () => setStatus('Could not reach the server — make sure it is running and the address is correct.', true);
+  }
+
+  function handleIncoming(data){
+    switch(data.type){
+      case 'roster':
+        rosterInfo = data.players;
+        renderPlayerList();
+        break;
+      case 'roundStart':
+        applyRoundStart(data);
+        break;
+      case 'zstate':
+        applyZombieState(data);
+        break;
+      case 'ability':
+        applyAbilityEvent(data);
+        break;
+      case 'state':
+        applyShooterState(data);
+        break;
+      case 'roundOver':
+        applyRoundOver(data);
+        break;
+    }
+  }
+
+  function renderPlayerList(){
+    const ids = Object.keys(rosterInfo);
+    const rows = ids.map(id => {
+      const info = rosterInfo[id];
+      const isShooter = currentShooterId===id;
+      const role = currentRoles[id];
+      const tag = isShooter ? 'SHOOTER' : (role ? role.toUpperCase() : '');
+      return `<li>${info.name||'?'}${id===myId?' (you)':''}<span class="tag">${tag}</span></li>`;
+    }).join('');
+    document.getElementById('playerList').innerHTML = rows || '<li>No one here yet.</li>';
+    document.getElementById('playerList2').innerHTML = rows || '';
+    document.getElementById('startBtn').disabled = ids.length < 2;
+  }
+
+  const nameInput = document.getElementById('nameInput');
+  const joinBtn = document.getElementById('joinBtn');
+  const startBtn = document.getElementById('startBtn');
+  const nextRoundBtn = document.getElementById('nextRoundBtn');
+  const lobbyScreen = document.getElementById('lobbyScreen');
+  const gameContainer = document.getElementById('game-container');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const resultTitle = document.getElementById('resultTitle');
+  const resultDetail = document.getElementById('resultDetail');
+  const waveBanner = document.getElementById('wave-banner');
+
+  joinBtn.addEventListener('click', () => {
+    myName = (nameInput.value||'').trim().slice(0,16) || ('Player'+Math.floor(Math.random()*900+100));
+    joinBtn.disabled = true; nameInput.disabled = true;
+    connectWS();
+  });
+
+  function requestStartRound(){
+    if(!joined) return;
+    wsSend({ type:'startRoundRequest' });
+  }
+  startBtn.addEventListener('click', requestStartRound);
+  nextRoundBtn.addEventListener('click', requestStartRound);
+
+  // ---------- Seeded RNG ----------
+  function mulberry32(seed){
+    return function(){
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed>>>15, 1 | seed);
+      t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t;
+      return ((t ^ t>>>14) >>> 0) / 4294967296;
+    };
+  }
+  let rand = Math.random;
+
+  // ---------- Canvas / camera ----------
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const mini = document.getElementById('mini-canvas');
+  const mctx = mini.getContext('2d');
+  let W,H,DPR=1;
+  function resize(){
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W*DPR); canvas.height = Math.round(H*DPR);
+    mini.style.width = '140px'; mini.style.height = '98px';
+    mini.width = Math.round(140*DPR); mini.height = Math.round(98*DPR);
+  }
+  resize(); window.addEventListener('resize', resize);
+  const cam = { x:0, y:0 };
+
+  // ---------- Audio ----------
+  let actx;
+  function ensureAudio(){ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); }
+  function sfx(type){
+    if(!actx) return;
+    const t = actx.currentTime; const o = actx.createOscillator(); const g = actx.createGain();
+    o.connect(g); g.connect(actx.destination);
+    if(type==='shot'){ o.type='square'; o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(60,t+0.08); g.gain.setValueAtTime(0.12,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.09); o.start(t); o.stop(t+0.1); }
+    else if(type==='hit'){ o.type='sawtooth'; o.frequency.setValueAtTime(90,t); g.gain.setValueAtTime(0.15,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12); o.start(t); o.stop(t+0.13); }
+    else if(type==='death'){ o.type='triangle'; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(30,t+0.3); g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.32); o.start(t); o.stop(t+0.33); }
+    else if(type==='hurt'){ o.type='sawtooth'; o.frequency.setValueAtTime(220,t); o.frequency.exponentialRampToValueAtTime(50,t+0.25); g.gain.setValueAtTime(0.2,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.28); o.start(t); o.stop(t+0.3); }
+    else if(type==='reload'){ o.type='square'; o.frequency.setValueAtTime(400,t); g.gain.setValueAtTime(0.06,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.06); o.start(t); o.stop(t+0.07); }
+    else if(type==='thud'){ o.type='sine'; o.frequency.setValueAtTime(70,t); g.gain.setValueAtTime(0.1,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.08); o.start(t); o.stop(t+0.09); }
+  }
+
+  // ---------- Input ----------
+  const keys = {};
+  const mouse = { x:0, y:0, down:false };
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase(); keys[k]=true;
+    if(k==='r') requestReload();
+    if(k===' ') useAbility();
+  });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+  window.addEventListener('mousedown', () => { mouse.down = true; onFireDown(); });
+  window.addEventListener('mouseup', () => { mouse.down = false; });
+
+  // ---------- Guns (shooter only) ----------
+  const GUNS = {
+    pistol:  { name:'PISTOL',  mag:15, reloadTime:1.1, cooldown:0.13, dmg:12, bulletSpeed:900,  spread:0.05, pellets:1, pierce:1, color:'#e8e2d0' },
+    smg:     { name:'SMG',     mag:30, reloadTime:1.4, cooldown:0.06, dmg:7,  bulletSpeed:950,  spread:0.10, pellets:1, pierce:1, color:'#8ad1ff' },
+    shotgun: { name:'SHOTGUN', mag:6,  reloadTime:1.6, cooldown:0.5,  dmg:9,  bulletSpeed:780,  spread:0.30, pellets:6, pierce:1, color:'#ffb14a' },
+    rifle:   { name:'RIFLE',   mag:8,  reloadTime:1.8, cooldown:0.35, dmg:32, bulletSpeed:1300, spread:0.01, pellets:1, pierce:3, color:'#ff6b6b' },
+  };
+
+  // ---------- Human zombie roles (your friends) ----------
+  const ROLES = {
+    normal:  { speed:150, r:16, color:'#4f8a5b', glow:'#6bff8a', hp:60 },
+    speeder: { speed:235, r:13, color:'#8a7a2f', glow:'#e8d24a', hp:40 },
+    tanker:  { speed:105, r:24, color:'#6b1f24', glow:'#ff2d3a', hp:170, heavyHit:true },
+    exploder:{ speed:165, r:16, color:'#a3551f', glow:'#ffb347', hp:50,  canExplode:true },
+    spitter: { speed:130, r:15, color:'#2f5a8a', glow:'#4ac8ff', hp:45,  canSpit:true },
+    leaper:  { speed:195, r:15, color:'#5a2f8a', glow:'#b34aff', hp:55,  canLeap:true },
+  };
+  const ZOMBIE_ROLE_KEYS = Object.keys(ROLES);
+
+  // ---------- AI zombie types (the horde) ----------
+  const ZTYPES = {
+    normal:      { hp:30,  speed:65,  r:16, color:'#4f8a5b', glow:'#6bff8a' },
+    speeder:     { hp:20,  speed:145, r:13, color:'#8a7a2f', glow:'#e8d24a' },
+    tanker:      { hp:110, speed:42,  r:25, color:'#6b1f24', glow:'#ff2d3a' },
+    exploder:    { hp:26,  speed:70,  r:16, color:'#a3551f', glow:'#ffb347' },
+    spitter:     { hp:24,  speed:55,  r:15, color:'#2f5a8a', glow:'#4ac8ff' },
+    leaper:      { hp:34,  speed:85,  r:15, color:'#5a2f8a', glow:'#b34aff' },
+  };
+  const MIXABLE = ['leaper','exploder','speeder','tanker','spitter'];
+
+  // ---------- Maze ----------
+  const COLS=10, ROWS=7, CS=150, WT=20, WALL_H=50;
+  let worldW=COLS*CS, worldH=ROWS*CS;
+  let mazeCells=[], walls=[];
+
+  function buildMaze(){
+    mazeCells = [];
+    for(let i=0;i<COLS;i++){ mazeCells[i]=[]; for(let j=0;j<ROWS;j++){ mazeCells[i][j]={n:true,s:true,e:true,w:true,visited:false}; } }
+    const stack=[[0,0]]; mazeCells[0][0].visited=true;
+    while(stack.length){
+      const [i,j]=stack[stack.length-1];
+      const nbrs=[];
+      if(j>0 && !mazeCells[i][j-1].visited) nbrs.push(['n',i,j-1]);
+      if(j<ROWS-1 && !mazeCells[i][j+1].visited) nbrs.push(['s',i,j+1]);
+      if(i>0 && !mazeCells[i-1][j].visited) nbrs.push(['w',i-1,j]);
+      if(i<COLS-1 && !mazeCells[i+1][j].visited) nbrs.push(['e',i+1,j]);
+      if(nbrs.length===0){ stack.pop(); continue; }
+      const [dir,ni,nj] = nbrs[Math.floor(rand()*nbrs.length)];
+      mazeCells[i][j][dir]=false;
+      const opp={n:'s',s:'n',e:'w',w:'e'}[dir];
+      mazeCells[ni][nj][opp]=false; mazeCells[ni][nj].visited=true;
+      stack.push([ni,nj]);
+    }
+    for(let k=0;k<Math.floor(COLS*ROWS*0.08);k++){
+      const i=Math.floor(rand()*COLS), j=Math.floor(rand()*ROWS);
+      const dirs=['n','s','e','w'].filter(d=>{ if(d==='n') return j>0; if(d==='s') return j<ROWS-1; if(d==='w') return i>0; return i<COLS-1; });
+      const d = dirs[Math.floor(rand()*dirs.length)];
+      mazeCells[i][j][d]=false;
+      const [ni,nj]=d==='n'?[i,j-1]:d==='s'?[i,j+1]:d==='w'?[i-1,j]:[i+1,j];
+      const opp={n:'s',s:'n',e:'w',w:'e'}[d];
+      mazeCells[ni][nj][opp]=false;
+    }
+    walls=[];
+    for(let i=0;i<COLS;i++){
+      for(let j=0;j<ROWS;j++){
+        const c=mazeCells[i][j];
+        if(c.s) walls.push({x:i*CS-WT/2, y:(j+1)*CS-WT/2, w:CS+WT, h:WT});
+        if(c.e) walls.push({x:(i+1)*CS-WT/2, y:j*CS-WT/2, w:WT, h:CS+WT});
+        if(j===0 && c.n) walls.push({x:i*CS-WT/2, y:-WT/2, w:CS+WT, h:WT});
+        if(i===0 && c.w) walls.push({x:-WT/2, y:j*CS-WT/2, w:WT, h:CS+WT});
+      }
+    }
+  }
+  function cellCenter(i,j){ return { x:i*CS+CS/2, y:j*CS+CS/2 }; }
+  function cellAt(x,y){ return { i: Math.max(0,Math.min(COLS-1,Math.floor(x/CS))), j: Math.max(0,Math.min(ROWS-1,Math.floor(y/CS))) }; }
+  function pointInWall(x,y){ for(const w of walls){ if(x>w.x && x<w.x+w.w && y>w.y && y<w.y+w.h) return true; } return false; }
+  function resolveWalls(entity){
+    for(const w of walls){
+      const cx=Math.max(w.x, Math.min(entity.x, w.x+w.w)), cy=Math.max(w.y, Math.min(entity.y, w.y+w.h));
+      const dx=entity.x-cx, dy=entity.y-cy, distSq=dx*dx+dy*dy, r=entity.r;
+      if(distSq < r*r){
+        let dist=Math.sqrt(distSq);
+        if(dist<0.0001){ entity.y -= r; continue; }
+        const overlap=r-dist; entity.x += (dx/dist)*overlap; entity.y += (dy/dist)*overlap;
+      }
+    }
+  }
+
+  // ---------- Floor pits (megavariant floor-breaking trait) ----------
+  let pits = [];
+  function resolvePits(entity){
+    for(const p of pits){
+      const dx=entity.x-p.x, dy=entity.y-p.y, dist=Math.hypot(dx,dy), minDist=p.r+entity.r;
+      if(dist<minDist){
+        if(dist<0.0001){ entity.y -= minDist; continue; }
+        const overlap=minDist-dist; entity.x += (dx/dist)*overlap; entity.y += (dy/dist)*overlap;
+      }
+    }
+  }
+  function breakFloorNear(x,y){
+    for(const p of pits){ if(Math.hypot(p.x-x,p.y-y)<95) return false; }
+    pits.push({ x, y, r:52 });
+    spawnBlood(x,y,'#3a2f22',26);
+    shake = Math.max(shake, 16); sfx('thud');
+    return true;
+  }
+
+  // ---------- AI flow field (pathing toward the shooter) ----------
+  let flowDist = null, flowTimer = 0;
+  function computeFlowField(startI,startJ){
+    const dist=[];
+    for(let i=0;i<COLS;i++) dist[i]=new Array(ROWS).fill(Infinity);
+    dist[startI][startJ]=0;
+    const q=[[startI,startJ]]; let qi=0;
+    while(qi<q.length){
+      const [i,j]=q[qi++]; const d=dist[i][j]; const c=mazeCells[i][j];
+      const nbrs=[];
+      if(!c.n && j>0) nbrs.push([i,j-1]);
+      if(!c.s && j<ROWS-1) nbrs.push([i,j+1]);
+      if(!c.w && i>0) nbrs.push([i-1,j]);
+      if(!c.e && i<COLS-1) nbrs.push([i+1,j]);
+      for(const [ni,nj] of nbrs){ if(dist[ni][nj]>d+1){ dist[ni][nj]=d+1; q.push([ni,nj]); } }
+    }
+    return dist;
+  }
+  function randomFarAICell(minDist){
+    let best=null, bestD=-1, tries=0;
+    while(tries<50){
+      const i=Math.floor(Math.random()*COLS), j=Math.floor(Math.random()*ROWS);
+      tries++;
+      const d = flowDist ? flowDist[i][j] : 99;
+      if(d>=minDist) return {i,j};
+      if(d>bestD){ bestD=d; best={i,j}; }
+    }
+    return best || {i:0,j:0};
+  }
+
+  // ---------- Game/round state ----------
+  let amShooter = false;
+  let myRole = 'unassigned';
+  let inRound = false;
+  let me = null;
+  let remoteEntities = {};
+  let bullets = [];
+  let particles = [], decals = [], fogPuffs = [];
+  let groundGuns = [], gunSpawnTimer = 6;
+  let shooterProjectiles = [];
+  let remoteProjectiles = [];
+  let latestShooterView = null;
+  let roundStartAt = 0, roundDuration = 240000;
+  let shake = 0;
+  let lastNetWrite = 0;
+  let projIdCounter = 1;
+  const REGEN_DELAY=3, REGEN_RATE=10;
+
+  // AI horde (shooter-authoritative)
+  let aiZombies = [];
+  let remoteAIZombies = [];
+  let aiRenderCache = {};
+  let aiZIdCounter = 1;
+  let wave = 0, waveActive=false, waveSpawnQueue=0, waveSpawnTimer=0, waveDelay=0;
+  let kills = 0;
+
+  function initFog(){
+    fogPuffs=[];
+    for(let i=0;i<40;i++) fogPuffs.push({ x:rand()*worldW, y:rand()*worldH, r:70+rand()*140, vx:(rand()-0.5)*8, vy:(rand()-0.5)*8, a:0.02+rand()*0.03 });
+  }
+
+  function makeMyEntity(role, spawn){
+    if(role==='shooter'){
+      return { x:spawn.x, y:spawn.y, r:15, speed:250, angle:0, hp:100, maxHp:100, alive:true,
+        gun:'pistol', ammo:GUNS.pistol.mag, reloading:false, reloadT:0, fireCooldown:0,
+        walkPhase:0, moving:false, timeSinceHit:999 };
+    }
+    const base = ROLES[role];
+    return { x:spawn.x, y:spawn.y, r:base.r, speed:base.speed, angle:0, hp:base.hp, maxHp:base.hp, alive:true,
+      color:base.color, glow:base.glow, canExplode:!!base.canExplode, canSpit:!!base.canSpit, canLeap:!!base.canLeap,
+      heavyHit:!!base.heavyHit, walkPhase:0, moving:false,
+      leaping:false, leapT:0, leapDur:0.32, leapFrom:null, leapTo:null, hoverBoost:0, leapCooldown:0,
+      spitCooldown:0 };
+  }
+
+  function pickZombieSpawn(){
+    const farCells = [[COLS-1,0],[COLS-1,ROWS-1],[0,ROWS-1],[Math.floor(COLS/2),ROWS-1],[COLS-1,Math.floor(ROWS/2)]];
+    let hash=0; for(let i=0;i<myId.length;i++) hash = (hash*31 + myId.charCodeAt(i))>>>0;
+    const pick = farCells[hash % farCells.length];
+    const c = cellCenter(pick[0], pick[1]);
+    return { x: c.x + (rand()-0.5)*40, y: c.y + (rand()-0.5)*40 };
+  }
+
+  function applyRoundStart(g){
+    inRound = true;
+    ensureAudio();
+    currentShooterId = g.shooterId; currentRoles = g.roles || {}; currentRound = g.round;
+    rand = mulberry32(g.mazeSeed);
+    buildMaze(); initFog();
+    worldW = COLS*CS; worldH = ROWS*CS;
+    bullets=[]; particles=[]; decals=[]; groundGuns=[]; gunSpawnTimer=6;
+    shooterProjectiles=[]; remoteProjectiles=[]; remoteEntities={};
+    aiZombies=[]; remoteAIZombies=[]; aiRenderCache={}; pits=[];
+    wave=0; waveActive=false; waveSpawnQueue=0; waveSpawnTimer=0; waveDelay=0; kills=0;
+    flowDist=null; flowTimer=0;
+    roundStartAt = Date.now();
+
+    amShooter = (g.shooterId === myId);
+    myRole = amShooter ? 'shooter' : (g.roles[myId] || 'normal');
+
+    const spawn = amShooter ? cellCenter(0,0) : pickZombieSpawn();
+    me = makeMyEntity(myRole, spawn);
+    cam.x = me.x; cam.y = me.y;
+
+    if(amShooter){
+      flowDist = computeFlowField(0,0);
+      startNextWave();
+    }
+
+    lobbyScreen.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    gameContainer.classList.add('active');
+
+    document.getElementById('role-name').textContent = amShooter ? 'SHOOTER' : myRole.toUpperCase();
+    document.getElementById('hp-label').textContent = amShooter ? 'SURVIVOR STATUS' : 'ZOMBIE STATUS';
+    document.getElementById('gun-name').style.display = amShooter ? 'block' : 'none';
+    document.getElementById('ammo-wrap').style.display = amShooter ? 'flex' : 'none';
+    const hint = document.getElementById('ability-hint');
+    hint.textContent = amShooter ? '' :
+      myRole==='leaper' ? 'SPACE TO LEAP OVER WALLS' :
+      myRole==='exploder' ? 'SPACE TO SELF-DETONATE' :
+      myRole==='spitter' ? 'CLICK TO SPIT ACID' : '';
+    renderPlayerList();
+  }
+
+  function startNextWave(){
+    wave++; waveSpawnQueue = 4+wave*3; waveSpawnTimer=0; waveActive=true; waveDelay=0;
+    showWaveBanner();
+  }
+  function showWaveBanner(){
+    document.querySelector('#wave-banner .sub').textContent = wave===1 ? "THEY'RE COMING" : 'INCOMING HORDE';
+    waveBanner.firstChild.textContent = 'WAVE '+wave;
+    waveBanner.classList.add('show');
+    setTimeout(()=>waveBanner.classList.remove('show'), 1800);
+  }
+
+  function applyRoundOver(data){
+    inRound = false;
+    gameContainer.classList.remove('active');
+    gameOverScreen.style.display = 'flex';
+    resultTitle.innerHTML = data.result==='shooter' ? 'SHOOTER <span>WINS</span>' : 'ZOMBIES <span>WIN</span>';
+    resultDetail.innerHTML = data.result==='shooter'
+      ? 'Made it to wave '+(data.wave||wave)+' and put down '+(data.kills||kills)+' zombies. Nice shooting.'
+      : 'The shooter didn\'t make it. Zombies win this round.';
+    renderPlayerList();
+  }
+
+  function endRoundAs(result){
+    const payload = { type:'roundOver', result, round: currentRound, wave, kills };
+    applyRoundOver(payload);
+    wsSend(payload);
+  }
+
+  // ---------- Combat helpers (shared visuals) ----------
+  function spawnBlood(x,y,color,n){
+    for(let i=0;i<n;i++){
+      const a=Math.random()*Math.PI*2, sp=60+Math.random()*180;
+      particles.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.4+Math.random()*0.3, maxLife:0.7, size:2+Math.random()*3, color, type:'blood' });
+    }
+    decals.push({ x,y, r:6+Math.random()*10, color, a:0.5+Math.random()*0.3 });
+    if(decals.length>90) decals.shift();
+  }
+  function spawnSpark(x,y){
+    for(let i=0;i<6;i++){
+      const a=Math.random()*Math.PI*2, sp=80+Math.random()*120;
+      particles.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.18, maxLife:0.18, size:2, color:'#ffe9b8', type:'blood' });
+    }
+  }
+  function triggerExplosionOnShooter(x,y){
+    particles.push({x,y,vx:0,vy:0,life:0.3,maxLife:0.3,size:70,color:'#ffb347',type:'flash'});
+    spawnBlood(x,y,'#ffb347',24);
+    const d = Math.hypot(me.x-x, me.y-y);
+    if(d<100){
+      const dmg = 30*(1-d/100)+10;
+      me.hp -= dmg; me.timeSinceHit=0; shake=Math.max(shake,16); sfx('hurt');
+      spawnBlood(me.x,me.y,'#ff2d3a',8);
+    }
+  }
+
+  // ---------- Shooter input: fire/reload ----------
+  function requestReload(){
+    if(!inRound || !amShooter || !me || !me.alive) return;
+    const g = GUNS[me.gun];
+    if(me.reloading || me.ammo===g.mag) return;
+    me.reloading = true; me.reloadT = g.reloadTime; sfx('reload');
+  }
+  function onFireDown(){
+    if(!inRound) return;
+    if(amShooter) fireGun();
+    else if(myRole==='spitter') fireSpit();
+  }
+  function fireGun(){
+    if(!me.alive) return;
+    const g = GUNS[me.gun];
+    if(me.reloading || me.ammo<=0){ if(me.ammo<=0) requestReload(); return; }
+    if(me.fireCooldown>0) return;
+    me.fireCooldown = g.cooldown; me.ammo--; sfx('shot');
+    for(let i=0;i<g.pellets;i++){
+      const spread=(Math.random()-0.5)*g.spread, a=me.angle+spread;
+      const sx=me.x+Math.cos(a)*me.r*1.4, sy=me.y+Math.sin(a)*me.r*1.4;
+      if(pointInWall(sx,sy)){ spawnSpark(sx,sy); continue; }
+      bullets.push({ x:sx, y:sy, vx:Math.cos(a)*g.bulletSpeed, vy:Math.sin(a)*g.bulletSpeed, life:0.9, dmg:g.dmg, pierce:g.pierce, hitSet:new Set(), color:g.color });
+    }
+    particles.push({ x:me.x+Math.cos(me.angle)*me.r*1.6, y:me.y+Math.sin(me.angle)*me.r*1.6, vx:0,vy:0, life:0.06, maxLife:0.06, size:g.pellets>1?20:14, color:'#ffe9b8', type:'flash' });
+    shake = Math.max(shake, g.pellets>1?5:2.5);
+    if(me.ammo===0) requestReload();
+  }
+  function fireSpit(){
+    if(!me.alive || myRole!=='spitter') return;
+    if(me.spitCooldown>0) return;
+    me.spitCooldown = 1.1;
+    const msg = { type:'ability', ability:'spit', round:currentRound, x:me.x+Math.cos(me.angle)*me.r, y:me.y+Math.sin(me.angle)*me.r, angle:me.angle };
+    wsSend(msg);
+    sfx('shot');
+  }
+  function useAbility(){
+    if(!inRound || amShooter || !me || !me.alive) return;
+    if(myRole==='exploder'){
+      me.alive = false;
+      const msg = { type:'ability', ability:'explode', round:currentRound, x:me.x, y:me.y };
+      wsSend(msg);
+    } else if(myRole==='leaper'){
+      if(me.leaping || me.leapCooldown>0) return;
+      const a = me.angle, dist = 130;
+      const tx = Math.max(20, Math.min(worldW-20, me.x+Math.cos(a)*dist));
+      const ty = Math.max(20, Math.min(worldH-20, me.y+Math.sin(a)*dist));
+      me.leaping = true; me.leapT = 0; me.leapFrom = {x:me.x,y:me.y}; me.leapTo = {x:tx,y:ty};
+      sfx('thud');
+    }
+  }
+
+  // ---------- Shooter-side: receiving human zombie updates/abilities ----------
+  function applyZombieState(data){
+    if(data.round !== currentRound) return;
+    const id = data.from;
+    const prev = remoteEntities[id] || {};
+    remoteEntities[id] = {
+      name: (rosterInfo[id]&&rosterInfo[id].name) || '?',
+      x: data.x, y: data.y, angle: data.angle, alive: data.alive,
+      role: currentRoles[id] || prev.role || 'normal',
+      hp: prev.hp!==undefined ? prev.hp : (ROLES[currentRoles[id]]?ROLES[currentRoles[id]].hp:50),
+      maxHp: prev.maxHp!==undefined ? prev.maxHp : (ROLES[currentRoles[id]]?ROLES[currentRoles[id]].hp:50),
+      walkPhase: prev.walkPhase || Math.random()*10,
+      hitCooldown: prev.hitCooldown || 0
+    };
+  }
+  function applyAbilityEvent(data){
+    if(data.round !== currentRound) return;
+    if(data.ability==='explode'){
+      if(remoteEntities[data.from]) remoteEntities[data.from].alive = false;
+      triggerExplosionOnShooter(data.x, data.y);
+    } else if(data.ability==='spit'){
+      shooterProjectiles.push({ id:'proj'+(projIdCounter++), x:data.x, y:data.y, vx:Math.cos(data.angle)*260, vy:Math.sin(data.angle)*260, expiresAt: Date.now()+2500 });
+    }
+  }
+
+  // ---------- AI horde: type selection & spawning (shooter-only) ----------
+  function pickAIZombieType(){
+    const pool = [['normal', 40]];
+    if(wave>=3) pool.push(['speeder', 20], ['exploder', 15]);
+    if(wave>=4) pool.push(['tanker', 15]);
+    if(wave>=5) pool.push(['spitter', 15]);
+    if(wave>=6) pool.push(['leaper', 12]);
+    const total = pool.reduce((s,p)=>s+p[1],0);
+    let r = Math.random()*total;
+    for(const [t,w] of pool){ if(r<w) return t; r-=w; }
+    return 'normal';
+  }
+  function applyAITrait(z, trait){
+    if(trait==='leaper'){ z.canLeap = true; }
+    else if(trait==='exploder'){ z.canExplode = true; }
+    else if(trait==='speeder'){ z.speed = Math.round(z.speed*1.5); z.hp = Math.max(10, Math.round(z.hp*0.85)); z.maxHp=z.hp; }
+    else if(trait==='tanker'){ z.hp = Math.round(z.hp*1.7); z.maxHp=z.hp; z.speed=Math.round(z.speed*0.85); z.r=Math.max(z.r,20); z.heavyHit=true; }
+    else if(trait==='spitter'){ z.canSpit = true; }
+  }
+  function spawnAIZombie(){
+    const {i,j} = randomFarAICell(3);
+    const c = cellCenter(i,j);
+    const primary = pickAIZombieType();
+    const base = ZTYPES[primary];
+    const z = {
+      id: 'ai'+(aiZIdCounter++), x:c.x+(Math.random()-0.5)*40, y:c.y+(Math.random()-0.5)*40,
+      type:primary, color:base.color, glow:base.glow, hp:base.hp, maxHp:base.hp, speed:base.speed, r:base.r,
+      seed:Math.random()*1000, hitCooldown:0, facing:0, walkPhase:Math.random()*10,
+      canLeap:false, canExplode:false, canSpit:false, canBreakFloor:false, heavyHit:false,
+      leaping:false, hoverBoost:0, markDead:false,
+      leapCooldown:0.6+Math.random()*0.8, fireCd:1+Math.random(), floorTimer:4+Math.random()*3,
+      mixed:false, secondaryType:null
+    };
+    applyAITrait(z, primary);
+    if(wave>=5 && Math.random()<0.2){
+      const options = MIXABLE.filter(t=>t!==primary);
+      const secondary = options[Math.floor(Math.random()*options.length)];
+      applyAITrait(z, secondary);
+      z.mixed = true; z.secondaryType = secondary;
+    }
+    if(wave>=6 && !aiZombies.some(o=>o.canBreakFloor) && Math.random()<0.07){ z.canBreakFloor = true; }
+    aiZombies.push(z);
+  }
+
+  function checkAIZombieContact(z){
+    const d = Math.hypot(me.x-z.x, me.y-z.y);
+    if(d < me.r+z.r-4 && z.hitCooldown<=0){
+      if(z.canExplode){
+        z.markDead = true;
+        kills++; triggerExplosionOnShooter(z.x, z.y);
+      } else {
+        z.hitCooldown = 0.6;
+        me.hp -= (z.heavyHit?18:10);
+        me.timeSinceHit=0; shake=10; sfx('hurt');
+        spawnBlood(me.x,me.y,'#ff2d3a',10);
+      }
+    }
+  }
+  function damageAIZombie(z, amount){
+    z.hp -= amount;
+    spawnBlood(z.x, z.y, z.glow, 5);
+    if(z.hp<=0){ finishAIZombie(z); return true; }
+    sfx('hit'); return false;
+  }
+  function finishAIZombie(z){
+    spawnBlood(z.x, z.y, z.glow, 22);
+    kills++; sfx('death');
+    if(z.canExplode) triggerExplosionOnShooter(z.x, z.y);
+  }
+
+  function updateAILeaperMovement(z, dt){
+    if(z.leaping){
+      z.leapT += dt;
+      const t = Math.min(1, z.leapT/z.leapDur);
+      const ease = t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+      z.x = z.leapFrom.x + (z.leapTo.x-z.leapFrom.x)*ease;
+      z.y = z.leapFrom.y + (z.leapTo.y-z.leapFrom.y)*ease;
+      z.hoverBoost = Math.sin(t*Math.PI)*40;
+      z.facing = Math.atan2(z.leapTo.y-z.leapFrom.y, z.leapTo.x-z.leapFrom.x);
+      z.walkPhase += dt*14;
+      if(t>=1){ z.leaping=false; z.hoverBoost=0; resolveWalls(z); resolvePits(z); z.leapCooldown=0.7+Math.random()*0.6; }
+      checkAIZombieContact(z);
+      return;
+    }
+    z.leapCooldown -= dt;
+    const a = Math.atan2(me.y-z.y, me.x-z.x);
+    const lookX=z.x+Math.cos(a)*46, lookY=z.y+Math.sin(a)*46;
+    const blocked = pointInWall(lookX,lookY);
+    if(blocked && z.leapCooldown<=0){
+      const dToPlayer = Math.hypot(me.x-z.x, me.y-z.y);
+      const dist = Math.min(150, Math.max(70, dToPlayer*0.5));
+      const tx = Math.max(20, Math.min(worldW-20, z.x+Math.cos(a)*dist));
+      const ty = Math.max(20, Math.min(worldH-20, z.y+Math.sin(a)*dist));
+      z.leaping = true; z.leapT=0; z.leapDur=0.32;
+      z.leapFrom={x:z.x,y:z.y}; z.leapTo={x:tx,y:ty};
+      sfx('thud');
+    } else {
+      z.x += Math.cos(a)*z.speed*dt; z.y += Math.sin(a)*z.speed*dt;
+      resolveWalls(z); resolvePits(z);
+      z.facing=a; z.walkPhase += dt*8;
+      if(z.hitCooldown>0) z.hitCooldown -= dt;
+      checkAIZombieContact(z);
+    }
+  }
+
+  function updateAIZombie(z, dt){
+    if(z.canBreakFloor){
+      z.floorTimer -= dt;
+      if(z.floorTimer<=0){ breakFloorNear(z.x,z.y); z.floorTimer=5+Math.random()*3; }
+    }
+    if(z.canSpit){
+      z.fireCd -= dt;
+      const dp = Math.hypot(me.x-z.x, me.y-z.y);
+      if(dp<280 && dp>30 && z.fireCd<=0){
+        const a = Math.atan2(me.y-z.y, me.x-z.x);
+        shooterProjectiles.push({ id:'proj'+(projIdCounter++), x:z.x+Math.cos(a)*z.r, y:z.y+Math.sin(a)*z.r, vx:Math.cos(a)*260, vy:Math.sin(a)*260, expiresAt: Date.now()+2500 });
+        z.fireCd = 1.8+Math.random()*0.7;
+      }
+    }
+    if(z.canLeap){ updateAILeaperMovement(z, dt); return; }
+
+    const zc = cellAt(z.x, z.y);
+    const myDist = flowDist[zc.i][zc.j];
+    let targetX, targetY;
+    if(myDist<=1){ targetX=me.x; targetY=me.y; }
+    else {
+      const c = mazeCells[zc.i][zc.j];
+      const opts = [];
+      if(!c.n && zc.j>0) opts.push([zc.i, zc.j-1]);
+      if(!c.s && zc.j<ROWS-1) opts.push([zc.i, zc.j+1]);
+      if(!c.w && zc.i>0) opts.push([zc.i-1, zc.j]);
+      if(!c.e && zc.i<COLS-1) opts.push([zc.i+1, zc.j]);
+      let best=null, bestD=Infinity;
+      for(const [ni,nj] of opts){ if(flowDist[ni][nj]<bestD){ bestD=flowDist[ni][nj]; best=[ni,nj]; } }
+      if(best){ const cc=cellCenter(best[0],best[1]); targetX=cc.x; targetY=cc.y; } else { targetX=me.x; targetY=me.y; }
+    }
+    if(z.canSpit){
+      const dp = Math.hypot(me.x-z.x, me.y-z.y);
+      if(dp<170){ const a=Math.atan2(z.y-me.y, z.x-me.x); targetX=z.x+Math.cos(a)*80; targetY=z.y+Math.sin(a)*80; }
+    }
+    const a = Math.atan2(targetY-z.y, targetX-z.x);
+    const wob = Math.sin(performance.now()/180+z.seed)*0.2;
+    z.x += Math.cos(a+wob*0.15)*z.speed*dt; z.y += Math.sin(a+wob*0.15)*z.speed*dt;
+    resolveWalls(z); resolvePits(z);
+    z.facing=a; z.walkPhase += dt*8;
+    if(z.hitCooldown>0) z.hitCooldown -= dt;
+    checkAIZombieContact(z);
+  }
+
+  // ---------- Non-shooter: receiving the shooter's broadcast ----------
+  function lerpAngle(a,b,t){ let diff=((b-a+Math.PI*3)%(Math.PI*2))-Math.PI; return a+diff*t; }
+
+  function applyShooterState(data){
+    if(data.round !== currentRound) return;
+    latestShooterView = Object.assign(latestShooterView && latestShooterView.renderX!==undefined ? {renderX:latestShooterView.renderX, renderY:latestShooterView.renderY, renderAngle:latestShooterView.renderAngle} : {}, data);
+    if(latestShooterView.renderX===undefined){ latestShooterView.renderX=data.x; latestShooterView.renderY=data.y; latestShooterView.renderAngle=data.angle; }
+
+    const newEntities = {};
+    for(const id in data.zombies){
+      const z = data.zombies[id];
+      if(id===myId){
+        if(me){
+          me.hp = z.hp; me.maxHp = z.maxHp;
+          if(me.alive && !z.alive) me.alive = false;
+        }
+        continue;
+      }
+      const prev = remoteEntities[id]||{};
+      newEntities[id] = { ...z, name:(rosterInfo[id]&&rosterInfo[id].name)||'?',
+        walkPhase: prev.walkPhase||Math.random()*10,
+        renderX: prev.renderX!==undefined?prev.renderX:z.x, renderY: prev.renderY!==undefined?prev.renderY:z.y,
+        renderAngle: prev.renderAngle!==undefined?prev.renderAngle:z.angle };
+    }
+    remoteEntities = newEntities;
+    remoteProjectiles = data.projectiles || [];
+    pits = data.pits || [];
+    wave = data.wave || wave;
+    kills = data.kills || kills;
+
+    const newAI = [];
+    for(const z of (data.aiZombies||[])){
+      const prev = aiRenderCache[z.id] || {};
+      const merged = { ...z, renderX: prev.renderX!==undefined?prev.renderX:z.x, renderY: prev.renderY!==undefined?prev.renderY:z.y, renderAngle: prev.renderAngle!==undefined?prev.renderAngle:z.angle };
+      aiRenderCache[z.id] = merged;
+      newAI.push(merged);
+    }
+    remoteAIZombies = newAI;
+  }
+
+  function smoothRemote(dt){
+    const rate = Math.min(1, dt*10);
+    for(const id in remoteEntities){
+      const e = remoteEntities[id];
+      e.renderX += (e.x-e.renderX)*rate;
+      e.renderY += (e.y-e.renderY)*rate;
+      e.renderAngle = lerpAngle(e.renderAngle, e.angle, rate);
+    }
+    for(const z of remoteAIZombies){
+      z.renderX += (z.x-z.renderX)*rate;
+      z.renderY += (z.y-z.renderY)*rate;
+      z.renderAngle = lerpAngle(z.renderAngle, z.angle, rate);
+    }
+    if(!amShooter && latestShooterView){
+      const sv = latestShooterView;
+      sv.renderX += (sv.x-sv.renderX)*rate;
+      sv.renderY += (sv.y-sv.renderY)*rate;
+      sv.renderAngle = lerpAngle(sv.renderAngle, sv.angle, rate);
+    }
+  }
+
+  // ---------- Update loop ----------
+  let lastTime = performance.now();
+  function update(dt){
+    if(!inRound || !me) return;
+
+    const wm = { x: mouse.x - W/2 + cam.x, y: mouse.y - H/2 + cam.y };
+    me.angle = Math.atan2(wm.y-me.y, wm.x-me.x);
+
+    if(me.alive){
+      let dx=0,dy=0;
+      if(keys['w']||keys['arrowup']) dy-=1;
+      if(keys['s']||keys['arrowdown']) dy+=1;
+      if(keys['a']||keys['arrowleft']) dx-=1;
+      if(keys['d']||keys['arrowright']) dx+=1;
+      const len = Math.hypot(dx,dy)||1;
+      me.moving = (dx!==0||dy!==0);
+
+      if(myRole==='leaper' && me.leaping){
+        me.leapT += dt;
+        const t = Math.min(1, me.leapT/me.leapDur);
+        const ease = t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+        me.x = me.leapFrom.x + (me.leapTo.x-me.leapFrom.x)*ease;
+        me.y = me.leapFrom.y + (me.leapTo.y-me.leapFrom.y)*ease;
+        me.hoverBoost = Math.sin(t*Math.PI)*40;
+        me.walkPhase += dt*14;
+        if(t>=1){ me.leaping=false; me.hoverBoost=0; resolveWalls(me); resolvePits(me); me.leapCooldown=0.6; }
+      } else {
+        me.x += (dx/len)*me.speed*dt; me.y += (dy/len)*me.speed*dt;
+        me.x = Math.max(me.r, Math.min(worldW-me.r, me.x));
+        me.y = Math.max(me.r, Math.min(worldH-me.r, me.y));
+        resolveWalls(me); resolvePits(me);
+        if(me.moving) me.walkPhase += dt*10; else me.walkPhase *= 0.9;
+      }
+      if(me.leapCooldown>0) me.leapCooldown -= dt;
+      if(me.spitCooldown>0) me.spitCooldown -= dt;
+
+      if(amShooter){
+        me.fireCooldown = Math.max(0, me.fireCooldown-dt);
+        if(me.reloading){
+          me.reloadT -= dt;
+          if(me.reloadT<=0){ me.reloading=false; me.ammo=GUNS[me.gun].mag; sfx('reload'); }
+        }
+        if(mouse.down) fireGun();
+        me.timeSinceHit += dt;
+        let healing=false;
+        if(me.timeSinceHit>=REGEN_DELAY && me.hp<me.maxHp && me.hp>0){ me.hp=Math.min(me.maxHp, me.hp+REGEN_RATE*dt); healing=true; }
+        document.getElementById('health-fill').classList.toggle('healing', healing);
+      } else {
+        if(mouse.down && myRole==='spitter') fireSpit();
+      }
+    }
+
+    cam.x = Math.max(W/2, Math.min(worldW-W/2, me.x));
+    cam.y = Math.max(H/2, Math.min(worldH-H/2, me.y));
+    if(worldW<W) cam.x = worldW/2;
+    if(worldH<H) cam.y = worldH/2;
+
+    if(amShooter) shooterAuthority(dt);
+    else smoothRemote(dt);
+
+    for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.9; p.vy*=0.9; p.life-=dt; if(p.life<=0) particles.splice(i,1); }
+    for(const f of fogPuffs){ f.x+=f.vx*dt; f.y+=f.vy*dt; if(f.x<-200)f.x=worldW+200; if(f.x>worldW+200)f.x=-200; if(f.y<-200)f.y=worldH+200; if(f.y>worldH+200)f.y=-200; }
+    shake = Math.max(0, shake-dt*30);
+
+    const now = performance.now();
+    if(now - lastNetWrite > 70){
+      lastNetWrite = now;
+      if(!amShooter){
+        wsSend({ type:'zstate', round:currentRound, x:me.x, y:me.y, angle:me.angle, alive:me.alive });
+      }
+      if(amShooter){
+        const zombiesOut = {};
+        for(const id in remoteEntities) zombiesOut[id] = { x:remoteEntities[id].x, y:remoteEntities[id].y, angle:remoteEntities[id].angle, hp:remoteEntities[id].hp, maxHp:remoteEntities[id].maxHp, alive:remoteEntities[id].alive, role:remoteEntities[id].role };
+        wsSend({
+          type:'state', round:currentRound, x:me.x, y:me.y, angle:me.angle, hp:me.hp, maxHp:me.maxHp, alive:me.alive,
+          gun:me.gun, ammo:me.ammo, reloading:me.reloading, wave, kills,
+          bullets: bullets.map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,color:b.color})),
+          zombies: zombiesOut,
+          aiZombies: aiZombies.map(z=>({id:z.id,type:z.type,x:z.x,y:z.y,angle:z.facing||0,hp:z.hp,maxHp:z.maxHp,mixed:z.mixed,secondaryType:z.secondaryType,canBreakFloor:z.canBreakFloor,walkPhase:z.walkPhase,hoverBoost:z.hoverBoost||0})),
+          pits: pits.map(p=>({x:p.x,y:p.y,r:p.r})),
+          projectiles: shooterProjectiles.map(p=>({x:p.x,y:p.y}))
+        });
+      }
+    }
+
+    updateHud();
+  }
+
+  function shooterAuthority(dt){
+    // bullets vs walls / human zombies / AI zombies
+    for(let i=bullets.length-1;i>=0;i--){
+      const b=bullets[i];
+      const dist=Math.hypot(b.vx,b.vy)*dt, steps=Math.max(1,Math.ceil(dist/(WT*0.5))), stepDt=dt/steps;
+      let blockedByWall=false;
+      for(let s=0;s<steps;s++){
+        b.x+=b.vx*stepDt; b.y+=b.vy*stepDt;
+        if(pointInWall(b.x,b.y)){ spawnSpark(b.x,b.y); bullets.splice(i,1); blockedByWall=true; break; }
+      }
+      if(blockedByWall) continue;
+      b.life -= dt;
+      if(b.life<=0||b.x<0||b.x>worldW||b.y<0||b.y>worldH){ bullets.splice(i,1); continue; }
+
+      let removed = false;
+      for(const id in remoteEntities){
+        const z = remoteEntities[id];
+        if(!z.alive || b.hitSet.has(id)) continue;
+        const r = (ROLES[z.role]||{r:16}).r;
+        if(Math.hypot(b.x-z.x,b.y-z.y) < r+4){
+          b.hitSet.add(id);
+          z.hp -= b.dmg;
+          spawnBlood(z.x,z.y, (ROLES[z.role]||{glow:'#6bff8a'}).glow, 5);
+          sfx('hit');
+          if(z.hp<=0){ z.hp=0; z.alive=false; sfx('death'); kills++; }
+          b.pierce--;
+          if(b.pierce<=0){ bullets.splice(i,1); removed=true; }
+          break;
+        }
+      }
+      if(removed) continue;
+
+      for(let k=aiZombies.length-1;k>=0;k--){
+        const z = aiZombies[k];
+        if(b.hitSet.has(z.id)) continue;
+        if(Math.hypot(b.x-z.x,b.y-z.y) < z.r+4){
+          b.hitSet.add(z.id);
+          const dead = damageAIZombie(z, b.dmg);
+          if(dead) aiZombies.splice(k,1);
+          b.pierce--;
+          if(b.pierce<=0) bullets.splice(i,1);
+          break;
+        }
+      }
+    }
+
+    // ground gun pickups
+    gunSpawnTimer -= dt;
+    if(gunSpawnTimer<=0 && groundGuns.length<3){
+      const gk = Object.keys(GUNS).filter(k=>k!=='pistol');
+      const type = gk[Math.floor(Math.random()*gk.length)];
+      let x,y,tries=0;
+      do{ x=60+Math.random()*(worldW-120); y=60+Math.random()*(worldH-120); tries++; } while(Math.hypot(x-me.x,y-me.y)<220 && tries<20);
+      groundGuns.push({x,y,type});
+      gunSpawnTimer = 14+Math.random()*8;
+    }
+    for(let i=groundGuns.length-1;i>=0;i--){
+      const gp=groundGuns[i];
+      if(Math.hypot(me.x-gp.x,me.y-gp.y) < me.r+20){
+        me.gun=gp.type; me.ammo=GUNS[gp.type].mag; me.reloading=false;
+        groundGuns.splice(i,1);
+      }
+    }
+
+    // human zombies vs shooter (contact damage)
+    for(const id in remoteEntities){
+      const z = remoteEntities[id];
+      if(!z.alive) continue;
+      const r = (ROLES[z.role]||{r:16}).r;
+      const d = Math.hypot(me.x-z.x, me.y-z.y);
+      if(d < me.r+r-4){
+        if(ROLES[z.role] && ROLES[z.role].canExplode){
+          z.alive=false; kills++; triggerExplosionOnShooter(z.x,z.y);
+        } else {
+          z.hitCooldown = z.hitCooldown||0;
+          if(z.hitCooldown<=0){
+            z.hitCooldown = 0.6;
+            me.hp -= (ROLES[z.role]&&ROLES[z.role].heavyHit ? 18:10);
+            me.timeSinceHit = 0; shake=10; sfx('hurt');
+            spawnBlood(me.x,me.y,'#ff2d3a',10);
+          }
+        }
+      }
+      if(z.hitCooldown>0) z.hitCooldown -= dt;
+    }
+
+    // AI horde: pathing, abilities, contact
+    for(const z of aiZombies) updateAIZombie(z, dt);
+    aiZombies = aiZombies.filter(z=>!z.markDead);
+
+    // flow field refresh
+    flowTimer -= dt;
+    if(flowTimer<=0){ const pc=cellAt(me.x,me.y); flowDist=computeFlowField(pc.i,pc.j); flowTimer=0.4; }
+
+    // wave spawning
+    if(waveActive){
+      if(waveSpawnQueue>0){
+        waveSpawnTimer -= dt;
+        if(waveSpawnTimer<=0){ spawnAIZombie(); waveSpawnQueue--; waveSpawnTimer=Math.max(0.25,1.0-wave*0.05); }
+      } else if(aiZombies.length===0){
+        waveDelay += dt;
+        if(waveDelay>1.6) startNextWave();
+      }
+    }
+
+    // projectiles (spit) vs shooter
+    for(let i=shooterProjectiles.length-1;i>=0;i--){
+      const p = shooterProjectiles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      if(pointInWall(p.x,p.y) || Date.now()>p.expiresAt){ shooterProjectiles.splice(i,1); continue; }
+      if(Math.hypot(p.x-me.x,p.y-me.y) < me.r+8){
+        me.hp -= 12; me.timeSinceHit=0; shake=Math.max(shake,8); sfx('hurt');
+        spawnBlood(me.x,me.y,'#4ac8ff',8);
+        shooterProjectiles.splice(i,1);
+      }
+    }
+
+    if(me.hp<=0 && me.alive){
+      me.hp=0; me.alive=false;
+      endRoundAs('zombies');
+    } else {
+      const timeUp = Date.now() - roundStartAt > roundDuration;
+      if(timeUp) endRoundAs('shooter');
+    }
+  }
+
+  function updateHud(){
+    if(!me) return;
+    document.getElementById('health-fill').style.width = Math.max(0,(me.hp/me.maxHp*100))+'%';
+    document.getElementById('health-num').textContent = Math.max(0,Math.round(me.hp))+' / '+me.maxHp;
+    document.getElementById('round-info').textContent = 'ROUND '+currentRound+' \u00b7 WAVE '+wave+' \u00b7 KILLS '+kills;
+    if(amShooter){
+      const g = GUNS[me.gun];
+      document.getElementById('gun-name').textContent = g.name;
+      document.getElementById('ammo-num').textContent = me.reloading?'--':me.ammo;
+      document.getElementById('ammo-max').textContent = '/ '+g.mag;
+    } else if(latestShooterView){
+      document.getElementById('shooter-hp-fill').style.width = Math.max(0,(latestShooterView.hp/latestShooterView.maxHp*100))+'%';
+    }
+  }
+
+  // ---------- Draw ----------
+  function drawWallBlock(w){
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(w.x-4,w.y+w.h-2,w.w+8,10);
+    const bodyGrad = ctx.createLinearGradient(w.x,w.y-WALL_H,w.x,w.y+w.h);
+    bodyGrad.addColorStop(0,'#26382a'); bodyGrad.addColorStop(0.35,'#16211a'); bodyGrad.addColorStop(1,'#0a100b');
+    ctx.fillStyle=bodyGrad; ctx.fillRect(w.x,w.y-WALL_H,w.w,w.h+WALL_H);
+    ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=2; ctx.strokeRect(w.x+1,w.y-WALL_H+1,w.w-2,w.h+WALL_H-2);
+    const topGrad = ctx.createLinearGradient(w.x,w.y-WALL_H,w.x,w.y-WALL_H+18);
+    topGrad.addColorStop(0,'#7fa383'); topGrad.addColorStop(1,'#425a45');
+    ctx.fillStyle=topGrad; ctx.fillRect(w.x,w.y-WALL_H,w.w,18);
+    ctx.strokeStyle='rgba(180,255,200,0.55)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(w.x,w.y-WALL_H+18); ctx.lineTo(w.x+w.w,w.y-WALL_H+18); ctx.stroke();
+  }
+
+  function drawEntity(e, isMe, roleKey){
+    if(!e.alive) return;
+    const r = isMe ? e.r : (ROLES[roleKey]||{r:16}).r;
+    const ex = isMe ? e.x : (e.renderX!==undefined?e.renderX:e.x);
+    const ey = isMe ? e.y : (e.renderY!==undefined?e.renderY:e.y);
+    const ea = isMe ? e.angle : (e.renderAngle!==undefined?e.renderAngle:e.angle);
+    ctx.save(); ctx.fillStyle='rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(ex, ey+r*0.55, r*0.9, r*0.4, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+    const hover = 5+Math.abs(Math.sin(e.walkPhase||0))*3 + (e.hoverBoost||0);
+    ctx.save(); ctx.translate(ex, ey-hover); ctx.rotate(ea||0);
+
+    if(roleKey==='shooter'){
+      ctx.fillStyle='#20241f'; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(232,226,208,0.5)'; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle='#e8e2d0'; ctx.fillRect(r*0.4,-3,r*1.3,6);
+    } else {
+      const color = isMe ? e.color : (ROLES[roleKey]||{color:'#4f8a5b'}).color;
+      const glow = isMe ? e.glow : (ROLES[roleKey]||{glow:'#6bff8a'}).glow;
+      const g = ctx.createRadialGradient(0,0,r*0.2,0,0,r*2.2);
+      g.addColorStop(0, glow+'55'); g.addColorStop(1,'transparent');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,r*2.2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=color; ctx.lineWidth=4; ctx.lineCap='round';
+      const sw = Math.sin(e.walkPhase||0)*8;
+      ctx.beginPath(); ctx.moveTo(-r*0.3,-r*0.2); ctx.lineTo(-r*0.9,-r*0.2+sw); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-r*0.3,r*0.2); ctx.lineTo(-r*0.9,r*0.2-sw); ctx.stroke();
+      ctx.fillStyle=color; ctx.beginPath(); ctx.ellipse(0,0,r,r*0.82,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.55,0,r*0.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=glow;
+      ctx.beginPath(); ctx.arc(r*0.75,-r*0.15,2.4,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.75,r*0.15,2.4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.fillStyle='rgba(232,226,208,0.85)'; ctx.font='10px "JetBrains Mono", monospace'; ctx.textAlign='center';
+    ctx.fillText(isMe ? 'YOU' : (e.name||roleKey), ex, ey-r-14);
+  }
+
+  function drawAIZombie(z, smoothed){
+    const zx = smoothed ? (z.renderX!==undefined?z.renderX:z.x) : z.x;
+    const zy = smoothed ? (z.renderY!==undefined?z.renderY:z.y) : z.y;
+    const za = smoothed ? (z.renderAngle!==undefined?z.renderAngle:z.angle) : (z.facing||z.angle||0);
+    const base = ZTYPES[z.type] || ZTYPES.normal;
+    ctx.save(); ctx.fillStyle='rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(zx, zy+base.r*0.55, base.r*0.9, base.r*0.4, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+    const hover = 5+Math.abs(Math.sin(z.walkPhase||0))*3 + (z.hoverBoost||0);
+    ctx.save(); ctx.translate(zx, zy-hover); ctx.rotate(za);
+    const g = ctx.createRadialGradient(0,0,base.r*0.2,0,0,base.r*2.2);
+    g.addColorStop(0, base.glow+'55'); g.addColorStop(1,'transparent');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,base.r*2.2,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=base.color; ctx.lineWidth=4; ctx.lineCap='round';
+    const sw = Math.sin(z.walkPhase||0)*8;
+    ctx.beginPath(); ctx.moveTo(-base.r*0.3,-base.r*0.2); ctx.lineTo(-base.r*0.9,-base.r*0.2+sw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-base.r*0.3,base.r*0.2); ctx.lineTo(-base.r*0.9,base.r*0.2-sw); ctx.stroke();
+    ctx.fillStyle=base.color; ctx.beginPath(); ctx.ellipse(0,0,base.r,base.r*0.82,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(base.r*0.55,0,base.r*0.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=base.glow;
+    ctx.beginPath(); ctx.arc(base.r*0.75,-base.r*0.15,2.4,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(base.r*0.75,base.r*0.15,2.4,0,Math.PI*2); ctx.fill();
+    if(z.mixed && z.secondaryType && ZTYPES[z.secondaryType]){
+      ctx.strokeStyle = ZTYPES[z.secondaryType].glow; ctx.lineWidth=2.2;
+      ctx.beginPath(); ctx.arc(0,0,base.r+5,0,Math.PI*2); ctx.stroke();
+    }
+    if(z.canBreakFloor){
+      const pulse = 0.4+Math.sin(performance.now()/220)*0.3;
+      ctx.strokeStyle = `rgba(184,255,107,${pulse})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(0,0,base.r+9,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+
+    if(z.maxHp>30){
+      const w = base.r*1.6;
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(zx-w/2, zy-base.r-16, w, 4);
+      ctx.fillStyle=base.glow; ctx.fillRect(zx-w/2, zy-base.r-16, w*Math.max(0,z.hp/z.maxHp), 4);
+    }
+  }
+
+  function draw(){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#020402'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    if(!inRound || !me){ return; }
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+
+    ctx.save();
+    let shx=0,shy=0;
+    if(shake>0.1){ shx=(Math.random()-0.5)*shake; shy=(Math.random()-0.5)*shake; }
+    ctx.translate(Math.round(W/2-cam.x+shx), Math.round(H/2-cam.y+shy));
+
+    const bg = ctx.createRadialGradient(me.x,me.y,80, me.x,me.y, Math.max(worldW,worldH)*0.7);
+    bg.addColorStop(0,'#141d15'); bg.addColorStop(1,'#050705');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,worldW,worldH);
+
+    ctx.strokeStyle='rgba(107,255,138,0.03)'; ctx.lineWidth=1;
+    for(let gx=0;gx<=worldW;gx+=50){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,worldH); ctx.stroke(); }
+    for(let gy=0;gy<=worldH;gy+=50){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(worldW,gy); ctx.stroke(); }
+
+    for(const p of pits){
+      const pg = ctx.createRadialGradient(p.x,p.y,p.r*0.15,p.x,p.y,p.r);
+      pg.addColorStop(0,'#000000'); pg.addColorStop(0.75,'#0a0f0a'); pg.addColorStop(1,'#22301f');
+      ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(107,255,138,0.18)'; ctx.lineWidth=2; ctx.stroke();
+    }
+
+    for(const d of decals){ ctx.fillStyle=d.color+'aa'; ctx.globalAlpha=d.a; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+
+    const list = [];
+    for(const w of walls) list.push({t:'wall', ref:w, sy:w.y+w.h});
+    if(!amShooter && latestShooterView) list.push({t:'entity', ref:latestShooterView, isMe:false, roleKey:'shooter', sy:latestShooterView.renderY!==undefined?latestShooterView.renderY:latestShooterView.y});
+    for(const id in remoteEntities) list.push({t:'entity', ref:remoteEntities[id], isMe:false, roleKey:remoteEntities[id].role, sy:remoteEntities[id].renderY!==undefined?remoteEntities[id].renderY:remoteEntities[id].y});
+    const aiList = amShooter ? aiZombies : remoteAIZombies;
+    for(const z of aiList) list.push({t:'aizombie', ref:z, smoothed:!amShooter, sy: (!amShooter && z.renderY!==undefined) ? z.renderY : z.y});
+    for(const gp of groundGuns) list.push({t:'gun', ref:gp, sy:gp.y});
+    list.push({t:'entity', ref:me, isMe:true, roleKey:myRole, sy:me.y});
+    list.sort((a,b)=>a.sy-b.sy);
+
+    for(const item of list){
+      if(item.t==='wall') drawWallBlock(item.ref);
+      else if(item.t==='entity') drawEntity(item.ref, item.isMe, item.roleKey);
+      else if(item.t==='aizombie') drawAIZombie(item.ref, item.smoothed);
+      else if(item.t==='gun'){
+        const gp=item.ref, gdef=GUNS[gp.type];
+        const bob=Math.sin(performance.now()/300+gp.x)*4, glowR=26+Math.sin(performance.now()/250)*4;
+        const gg=ctx.createRadialGradient(gp.x,gp.y+bob,2,gp.x,gp.y+bob,glowR);
+        gg.addColorStop(0,gdef.color+'66'); gg.addColorStop(1,'transparent');
+        ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(gp.x,gp.y+bob,glowR,0,Math.PI*2); ctx.fill();
+        ctx.save(); ctx.translate(gp.x,gp.y+bob);
+        ctx.fillStyle=gdef.color; ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=2;
+        ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(-14,-6,28,12,3); else ctx.rect(-14,-6,28,12);
+        ctx.fill(); ctx.stroke(); ctx.restore();
+        ctx.fillStyle='rgba(232,226,208,0.85)'; ctx.font='9px "JetBrains Mono", monospace'; ctx.textAlign='center';
+        ctx.fillText(gdef.name, gp.x, gp.y+bob-16);
+      }
+    }
+
+    const bshown = amShooter ? bullets : (latestShooterView && latestShooterView.bullets) || [];
+    for(const b of bshown){
+      ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(Math.atan2(b.vy,b.vx));
+      ctx.fillStyle=b.color||'#ffe9b8'; ctx.fillRect(-6,-1.5,12,3); ctx.restore();
+    }
+    const pshown = amShooter ? shooterProjectiles : remoteProjectiles;
+    for(const p of pshown){
+      const pg = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,10);
+      pg.addColorStop(0,'#bff3ff'); pg.addColorStop(1,'transparent');
+      ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#4ac8ff'; ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill();
+    }
+    for(const p of particles){
+      const alpha=Math.max(0,p.life/p.maxLife);
+      ctx.globalAlpha = p.type==='flash'?alpha:alpha*0.9;
+      ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.type==='flash'?p.size*alpha:p.size,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    for(const f of fogPuffs){
+      const fg=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r);
+      fg.addColorStop(0,`rgba(60,90,70,${f.a})`); fg.addColorStop(1,'rgba(60,90,70,0)');
+      ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill();
+    }
+
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const lg = ctx.createRadialGradient(me.x,me.y,10,me.x,me.y,480);
+    lg.addColorStop(0,'rgba(255,233,184,0.11)'); lg.addColorStop(1,'rgba(255,233,184,0)');
+    ctx.fillStyle=lg; ctx.beginPath(); ctx.moveTo(me.x,me.y);
+    ctx.arc(me.x,me.y,480, me.angle-0.4, me.angle+0.4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+    drawMinimap();
+  }
+
+  function drawMinimap(){
+    mctx.setTransform(1,0,0,1,0,0);
+    mctx.clearRect(0,0,mini.width,mini.height);
+    mctx.setTransform(DPR,0,0,DPR,0,0);
+    mctx.fillStyle='rgba(6,9,7,0.6)'; mctx.fillRect(0,0,140,98);
+    const sx=140/worldW, sy=98/worldH;
+    mctx.strokeStyle='rgba(107,255,138,0.5)'; mctx.lineWidth=1;
+    for(const w of walls) mctx.strokeRect(w.x*sx,w.y*sy,Math.max(1,w.w*sx),Math.max(1,w.h*sy));
+    mctx.fillStyle='#000';
+    for(const p of pits) mctx.beginPath(), mctx.arc(p.x*sx,p.y*sy,Math.max(1.2,p.r*sx),0,Math.PI*2), mctx.fill();
+    mctx.fillStyle='#ff2d3a';
+    const aiList2 = amShooter ? aiZombies : remoteAIZombies;
+    for(const z of aiList2){ mctx.beginPath(); mctx.arc(z.x*sx,z.y*sy,1.3,0,Math.PI*2); mctx.fill(); }
+    mctx.fillStyle='#ffb347';
+    for(const id in remoteEntities){ const z=remoteEntities[id]; if(z.alive){ mctx.beginPath(); mctx.arc(z.x*sx,z.y*sy,1.8,0,Math.PI*2); mctx.fill(); } }
+    mctx.fillStyle = amShooter ? '#6bff8a' : '#ffb347';
+    if(me && me.alive){ mctx.beginPath(); mctx.arc(me.x*sx,me.y*sy,2.6,0,Math.PI*2); mctx.fill(); }
+  }
+
+  function loop(now){
+    const dt = Math.min(0.033, (now-lastTime)/1000);
+    lastTime = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+})();
+
+</script>
+</body>
+</html>
